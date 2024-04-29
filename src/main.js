@@ -1,64 +1,9 @@
 const canvas = document.querySelector("#c");
 const gl = canvas.getContext("webgl");
+if (!gl) throw new Error("WebGL not supported");
 
 canvas.width = 512;
 canvas.height = 512;
-
-/* Variables */
-let scene_angle = 0;
-let scene_scale = [1, 1];
-let scene_translations = [256, 256];
-
-let positions = new Float32Array([
-    -100, -100,
-    100, -100,
-    -100, 100,
-    100, -100,
-    -100, 100,
-    100, 100
-]);
-
-let tex_coords = new Float32Array([
-    0.0,  0.0,
-    1.0,  0.0,
-    0.0,  1.0,
-
-    1.0,  0.0,
-    0.0,  1.0,
-    1.0,  1.0
-]);
-
-let image = new Image();
-image.src = "./src/assets/texture.jpg";
-image.onload = draw_scene;
-
-/* Shader Code */
-const vertex_shader_src = `
-    attribute vec2 a_position;
-    attribute vec2 a_texCoord;
-    uniform mat3 u_matrix;
-    varying vec2 v_texCoord;
-    
-    void main(){
-        gl_Position = vec4((u_matrix * vec3(a_position, 1)).xy, 0, 1);
-        v_texCoord = a_texCoord;
-    }
-`;
-
-const fragment_shader_src = `
-    precision mediump float;
-    
-    uniform sampler2D u_image;
-    varying vec2 v_texCoord;
-    
-    void main() {
-        gl_FragColor = texture2D(u_image, v_texCoord);
-    }
-`;
-
-if(!gl) {
-    throw new Error("WebGL is not supported on your browser!");
-}
 
 /* Util Functions */
 function create_shader(gl, type, src){
@@ -90,39 +35,162 @@ function create_program(gl, vertex_shader, fragment_shader){
     gl.deleteProgram();
 }
 
-/* WebGL Driver Code */
+/* Shaders */
+const vertex_shader_src = `
+    attribute vec4 a_position;
+    attribute vec2 a_texCoord;
+    uniform mat4 u_matrix;
+    varying vec2 v_texCoord;
+
+    void main(){
+        gl_Position = u_matrix * a_position;
+        v_texCoord = a_texCoord;
+    }
+`;
+
+const fragment_shader_src = `
+    precision mediump float;
+
+    uniform sampler2D u_image;
+    varying vec2 v_texCoord;
+
+    void main(){
+        gl_FragColor = texture2D(u_image, v_texCoord);
+    }
+`;
+
+/* Variables */
+let translation = [100, 200, 0];
+let rotation = [util.deg_to_rad(40), util.deg_to_rad(25), util.deg_to_rad(325)];
+let scale = [2, 2, 2];
+let color = [Math.random(), Math.random(), Math.random(), 1];
+
+let camera_left = 0;
+let camera_right = gl.canvas.width;
+let camera_bottom = gl.canvas.height;
+let camera_top = 0;
+let camera_near = 400;
+let camera_far = -400;
+
+const positions = [
+    // Front
+    0, 0, 0,
+    0, 100, 0,
+    100, 0, 0,
+    
+    100, 0, 0,
+    0, 100, 0,
+    100, 100, 0,
+
+    // Right
+    100, 0, 0,
+    100, 100, 0,
+    100, 0, 100,
+
+    100, 0, 100,
+    100, 100, 0,
+    100, 100, 100,
+
+    // Back
+    100, 0, 100,
+    100, 100, 100,
+    0, 0, 100,
+
+    0, 0, 100,
+    100, 100, 100,
+    0, 100, 100,
+    
+    // Left
+    0, 0, 100,
+    0, 0, 0,
+    0, 100, 100,
+
+    0, 0, 0,
+    0, 100, 0,
+    0, 100, 100,
+    
+    // Top
+    0, 0, 100,
+    0, 0, 0,
+    100, 0, 100,
+    
+    100, 0, 100,
+    0, 0, 0,
+    100, 0, 0,
+
+    // Bottom
+    0, 100, 100,
+    0, 100, 0,
+    100, 100, 100,
+
+    100, 100, 100,
+    0, 100, 0,
+    100, 100, 0
+];
+
+const texture_pos_pattern = [
+    0, 0,
+    0, 1,
+    1, 0,
+    
+    1, 0,
+    0, 1,
+    1, 1
+]
+
+const texture_pos = [
+    ...texture_pos_pattern,
+    ...texture_pos_pattern,
+    ...texture_pos_pattern,
+    ...texture_pos_pattern,
+    ...texture_pos_pattern,
+    ...texture_pos_pattern,
+];
+
+let image = new Image();
+image.src = "./src/assets/texture.jpg";
+image.onload = draw_scene;
+
+/* Driver Code */
 const vertex_shader = create_shader(gl, gl.VERTEX_SHADER, vertex_shader_src);
 const fragment_shader = create_shader(gl, gl.FRAGMENT_SHADER, fragment_shader_src);
 const program = create_program(gl, vertex_shader, fragment_shader);
 
-let pos_attribute_loc = gl.getAttribLocation(program, "a_position");
-let tex_attribute_loc = gl.getAttribLocation(program, "a_texCoord");
-let mat_uniform_loc = gl.getUniformLocation(program, "u_matrix");
+let attributes = {
+    position: gl.getAttribLocation(program, "a_position"),
+    texture: gl.getAttribLocation(program, "a_texCoord")
+};
 
-let pos_buffer = gl.createBuffer();
-gl.bindBuffer(gl.ARRAY_BUFFER, pos_buffer);
-gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+let uniforms = {
+    matrix: gl.getUniformLocation(program, "u_matrix")
+};
 
-let tex_buffer = gl.createBuffer();
-gl.bindBuffer(gl.ARRAY_BUFFER, tex_buffer);
-gl.bufferData(gl.ARRAY_BUFFER, tex_coords, gl.STATIC_DRAW);
+let position_buffer = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, position_buffer);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
 
-function draw_scene(){
+let texture_buffer = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, texture_buffer);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texture_pos), gl.STATIC_DRAW);
+
+function draw_scene() {
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.CULL_FACE);
+    gl.enable(gl.DEPTH_TEST);
     gl.useProgram(program);
 
-    gl.enableVertexAttribArray(pos_attribute_loc);
-    gl.bindBuffer(gl.ARRAY_BUFFER, pos_buffer);
-    gl.vertexAttribPointer(pos_attribute_loc, 2, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(attributes.position);
+    gl.bindBuffer(gl.ARRAY_BUFFER, position_buffer);
+    gl.vertexAttribPointer(attributes.position, 3, gl.FLOAT, false, 0, 0);
 
-    gl.enableVertexAttribArray(tex_attribute_loc);
-    gl.bindBuffer(gl.ARRAY_BUFFER, tex_buffer);
-    gl.vertexAttribPointer(tex_attribute_loc, 2, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(attributes.texture);
+    gl.bindBuffer(gl.ARRAY_BUFFER, texture_buffer);
+    gl.vertexAttribPointer(attributes.texture, 2, gl.FLOAT, false, 0, 0);
 
     let texture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, texture);
-
+    
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
@@ -130,11 +198,13 @@ function draw_scene(){
 
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
 
-    let mat = m3.projection(gl.canvas.clientWidth, gl.canvas.clientHeight);
-    mat = m3.translate(mat, scene_translations[0], scene_translations[1]);
-    mat = m3.rotate(mat, scene_angle);
-    mat = m3.scale(mat, scene_scale[0], scene_scale[1]);
+    var matrix = m4.orthographic(camera_left, camera_right, camera_bottom, camera_top, camera_near, camera_far);
+    matrix = m4.mat_translate(matrix, translation[0], translation[1], translation[2]);
+    matrix = m4.mat_rotation_x(matrix, rotation[0]);
+    matrix = m4.mat_rotation_y(matrix, rotation[1]);
+    matrix = m4.mat_rotation_z(matrix, rotation[2]);
+    matrix = m4.mat_scale(matrix, scale[0], scale[1], scale[2]);
 
-    gl.uniformMatrix3fv(mat_uniform_loc, false, mat);
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    gl.uniformMatrix4fv(uniforms.matrix, false, matrix);
+    gl.drawArrays(gl.TRIANGLES, 0, positions.length);
 }
