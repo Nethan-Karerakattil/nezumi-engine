@@ -2,21 +2,21 @@ let util = {
 
     /**
      * Converts radians to degrees
-     * @param {number} rad Angle in Radians 
-     * @returns Angle in degrees
+     * @param {number} rad Angle in Radians
+     * @returns {number} Angle in degrees
      */
     rad_to_deg: (rad) => {
         return rad * 180 / Math.PI;
     },
 
     /**
-     * 
+     * Converts degrees to radians
      * @param {number} deg Angle in Degrees
-     * @returns Angle in Radians
+     * @returns {number} Angle in Radians
      */
     deg_to_rad: (deg) => {
         return deg * Math.PI / 180;
-    }
+    },
 };
 
 let m4 = {
@@ -238,6 +238,26 @@ let m4 = {
             (bottom + top) / (bottom - top),
             (near + far) / (near - far),
             1,
+        ];
+    },
+
+    /**
+     * Returns a perspective projection matrix
+     * @param {number} fov Field of view in radians
+     * @param {number} aspect Aspect Ratio
+     * @param {number} near Near clipping plane
+     * @param {number} far Far clipping plane
+     * @returns {matrix} A projection matrix with perspective
+     */
+    perspective: (fov, aspect, near, far) => {
+        let f = Math.tan(Math.PI * 0.5 - 0.5 * fov);
+        let range_inv = 1 / (near - far);
+
+        return [
+            f / aspect, 0, 0, 0,
+            0, f, 0, 0,
+            0, 0, (near + far) * range_inv, -1,
+            0, 0, near * far * range_inv * 2, 0
         ];
     }
 };
